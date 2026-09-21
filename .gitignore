@@ -1,0 +1,41 @@
+# ============ Keil MDK 编译产物 ============
+# 输出目录(以 Keil 的 target 名命名)
+firmware/flight_controller/MDK-ARM/FlightController/
+firmware/remote_controller/MDK-ARM/RemoteController/
+
+# 中间文件
+*.o
+*.crf
+*.d
+*.axf
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.lnp
+*.dep
+*.htm
+*.build_log.htm
+*.bak
+*.i
+*.sct.bak
+
+# 每个用户的界面布局与调试窗口布局
+*.uvguix.*
+*.scvd
+*.dbgconf.bak
+
+# ============ 编辑器 / 工具本地文件 ============
+.vscode/
+.idea/
+*.log
+uv4.log*
+keil-assistant.log
+JLinkLog.txt
+
+# ============ 操作系统杂项 ============
+Thumbs.db
+Desktop.ini
+.DS_Store
+desktop.ini

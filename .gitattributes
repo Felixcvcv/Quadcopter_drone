@@ -1,0 +1,30 @@
+# 换行符统一: 仓库内存 LF, Windows 上检出为 CRLF
+* text=auto
+
+# 源码与工程配置(文本)
+*.c         text
+*.h         text
+*.s         text
+*.ioc       text
+*.uvprojx   text
+*.uvoptx    text
+*.md        text
+*.sct       text
+.gitignore  text
+
+# 二进制资源, 禁止任何换行/编码转换
+*.docx      binary
+*.pptx      binary
+*.xlsx      binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.emf       binary
+*.bin       binary
+*.axf       binary
+*.hex       binary
+*.dbgconf   binary
+
+# CubeMX 的工程记录文件, 按原样保存
+*.mxproject -text
