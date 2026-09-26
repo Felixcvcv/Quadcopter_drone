@@ -98,6 +98,16 @@
                     else a.ROL = approach(a.ROL, 500, rate * selfCenter);
                 }
 
+                /*
+                 * 通道值必须限幅在 0~1000。
+                 * 之前键盘增量累加后没有夹取: 一直按住方向键会把通道推到 1000 以上
+                 * (例如 1139), 于是下面换算旋钮位置时得到 1.26 个半径, 圆点就飞出圆圈了。
+                 */
+                a.THR = clamp(a.THR, 0, 1000);
+                a.YAW = clamp(a.YAW, 0, 1000);
+                a.PIT = clamp(a.PIT, 0, 1000);
+                a.ROL = clamp(a.ROL, 0, 1000);
+
                 /* 虚拟遥控器拖动会直接写 axes, 这里同步一下视图 */
                 input.stickView.leftX = (a.YAW - 500) / 500;
                 input.stickView.leftY = -(a.THR - 500) / 500;
@@ -119,14 +129,19 @@
                 var a = input.axes;
                 function pol_(v, s) { return s < 0 ? (1000 - v) : v; }
 
-                remote.joyStick.THR = Math.round(pol_(clamp(a.THR, 0, 1000), pol.THR));
-                remote.joyStick.YAW = Math.round(pol_(clamp(a.YAW, 0, 1000), pol.YAW));
-                remote.joyStick.PIT = Math.round(pol_(clamp(a.PIT, 0, 1000), pol.PIT));
-                remote.joyStick.ROL = Math.round(pol_(clamp(a.ROL, 0, 1000), pol.ROL));
-
-                /* 微调量叠加到遥控器零偏上(与 App_DataProcess 的微调键一致) */
+                /* 微调量就是遥控器的摇杆零偏, 由 Z/X/C/V 键修改 */
                 remote.joyStickBias.PIT = input.trim.PIT;
                 remote.joyStickBias.ROL = input.trim.ROL;
+
+                /* 极性映射之后再扣零偏并限幅 —— 与固件的
+                   App_DataProcess_JoyStickPolarityAndRange + JoystickWithBias 顺序一致 */
+                function ch(v, s, bias) {
+                    return Math.round(clamp(pol_(clamp(v, 0, 1000), s) - bias, 0, 1000));
+                }
+                remote.joyStick.THR = ch(a.THR, pol.THR, 0);
+                remote.joyStick.YAW = ch(a.YAW, pol.YAW, 0);
+                remote.joyStick.PIT = ch(a.PIT, pol.PIT, remote.joyStickBias.PIT);
+                remote.joyStick.ROL = ch(a.ROL, pol.ROL, remote.joyStickBias.ROL);
 
                 /* 一次性命令 */
                 if (input.cmd.isPowerDown) {
@@ -238,12 +253,41 @@
         for (var i = 0; i < refs.length; i++) {
             var r = refs[i];
             if (!r.knob) continue;
-            /* 水平: 通道值 -> -1..1; 垂直: 油门与俯仰都是"值大在上" */
-            var nx = (a[r.def.horiz] - 500) / 500;
-            var ny = -(a[r.def.vert] - 500) / 500;
-            r.knob.style.left = ((nx + 1) / 2 * 100) + '%';
-            r.knob.style.top = ((ny + 1) / 2 * 100) + '%';
+
+            /*
+             * 旋钮能走多远, 用像素算清楚, 避免圆点跑出圆圈:
+             *   可用位移上限 = 摇杆半径 - 旋钮半径
+             * 用 clientWidth 是因为百分比 left 是相对"内边距盒"解析的,
+             * 而 margin 已经是 -旋钮半径, 所以百分比位置就等于旋钮圆心位置。
+             */
+            if (r.maxOff === undefined) {
+                var W = r.el.clientWidth || 94;              /* 内边距盒宽度 */
+                var knobR = (r.knob.offsetWidth || 34) / 2;
+                r.boxW = W;
+                r.maxOff = Math.max(2, W / 2 - knobR);
+            }
+
+            /* 通道值 -> -1..1; 垂直方向"值大在上" */
+            var nx = clamp((a[r.def.horiz] - 500) / 500, -1, 1);
+            var ny = clamp(-(a[r.def.vert] - 500) / 500, -1, 1);
+
+            /*
+             * 关键: 把 (nx, ny) 当成向量限制在单位圆内再缩放。
+             * 只分别夹 x/y 是不够的 —— 斜向推到底时偏移量是单轴的 2 倍,
+             * 旋钮照样会顶出圆圈。
+             */
+            var len = Math.sqrt(nx * nx + ny * ny);
+            if (len > 1) { nx /= len; ny /= len; }
+
+            r.knob.style.left = (50 + nx * r.maxOff / r.boxW * 100) + '%';
+            r.knob.style.top = (50 + ny * r.maxOff / r.boxW * 100) + '%';
         }
+    }
+
+    /* 窗口尺寸变化后摇杆与旋钮的像素尺寸可能变(媒体查询), 让行程比重新计算 */
+    function resetStickCache() {
+        if (!stickRefs) return;
+        stickRefs.forEach(function (r) { r.maxOff = undefined; });
     }
 
     /**
@@ -319,6 +363,7 @@
         makeInput: makeInput,
         bindVirtualSticks: bindVirtualSticks,
         syncStickDom: syncStickDom,
+        resetStickCache: resetStickCache,
         STICK_DEFS: STICK_DEFS,
         BUTTONS: BUTTONS,
         KEYMAP: KEYMAP

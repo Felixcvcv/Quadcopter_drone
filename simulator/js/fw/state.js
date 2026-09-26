@@ -17,8 +17,8 @@
     var LOC = { LEFT_TOP: 0, LEFT_BOTTOM: 1, RIGHT_TOP: 2, RIGHT_BOTTOM: 3 };
     /* LED 状态: 0 常亮, 1 常灭, >=2 闪烁翻转周期 */
     var LED_ON = 0, LED_OFF = 1;
-    /* 电机转速范围 (对应 MOTOR_STOP / MOTOR_MAX) */
-    var MOTOR_STOP = 0, MOTOR_MAX = 1000;
+    /* 电机转速范围: 统一从 config 取, 避免两处各写一份导致不一致 */
+    var MOTOR_STOP = cfg.MOTOR_STOP, MOTOR_MAX = cfg.MOTOR_MAX;
 
     function makeDroneState() {
         /* 4 个 LED; pinOn 表示引脚电平(仿真里 LED 是低电平点亮) */

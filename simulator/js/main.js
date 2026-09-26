@@ -65,7 +65,7 @@
     var S = {
         simMs: 0,
         camMode: 0,          /* 0 追尾跟随  1 环绕  2 俯视跟随 (全是第三人称) */
-        camDist: 6.5,
+        camDist: 4.6,
         orbitYaw: -0.75,
         orbitPitch: 0.36,
         dragging: false,
@@ -269,7 +269,10 @@
         for (var i = 0; i < world.drone.props.length; i++) {
             var pr = world.drone.props[i];
             var sp = drone.motors[MOTOR_KEYS[i]].speed / cfg.MOTOR_MAX;
-            pr.mesh.rotation.z += (0.4 + sp * 3.6) * 26 * dtS * pr.dir;
+            var spin = (0.4 + sp * 3.6) * 26 * dtS * pr.dir;
+            /* 加个有限性保护: 一旦旋转角被写成 NaN 就再也转不回来了,
+               桨叶会一直不显示 —— 宁可这一帧不转, 也不要毁掉模型 */
+            if (isFinite(spin)) pr.mesh.rotation.z += spin;
         }
 
         MOTOR_KEYS.forEach(function (k) {
@@ -408,14 +411,16 @@
     });
     viewport.addEventListener('wheel', function (e) {
         e.preventDefault();
-        var lo = (S.camMode === 1) ? 1.5 : 2.5;
-        var hi = (S.camMode === 1) ? 90 : (S.camMode === 2 ? 45 : 26);
+        var lo = (S.camMode === 1) ? 1.2 : 2.0;
+        var hi = (S.camMode === 1) ? 90 : (S.camMode === 2 ? 45 : 22);
         S.camDist = QC.math.clamp(S.camDist * (1 + Math.sign(e.deltaY) * 0.12), lo, hi);
     }, { passive: false });
     root.addEventListener('resize', function () {
         renderer.setSize(root.innerWidth, root.innerHeight, false);
         camera.aspect = root.innerWidth / root.innerHeight;
         camera.updateProjectionMatrix();
+        /* 摇杆像素尺寸可能随媒体查询变化, 让旋钮行程重新计算 */
+        QC.input.resetStickCache();
     });
 
     QC.input.bindVirtualSticks(input, document);

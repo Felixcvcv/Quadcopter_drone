@@ -85,7 +85,8 @@
        没有使用任何大疆的模型或贴图资源。
        机体系: X 前, Y 右, Z 上; 电机位置与 dynamics.js 的 MOTOR_LAYOUT 一致。 */
     function buildDrone() {
-        var g = new THREE.Group();
+        var g = new THREE.Group();        /* 外层: 承担显示缩放 */
+        var inner = new THREE.Group();    /* 内层: 机身部件本身 */
 
         /* 材质: 白色亮面外壳 + 深色机臂 + 金属电机 + 半透明深色桨 */
         var shellMat = new THREE.MeshStandardMaterial({ color: 0xf0f2f4, roughness: 0.34, metalness: 0.06 });
@@ -104,29 +105,29 @@
         lower.scale.set(0.056, 0.043, 0.0135);
         lower.position.set(0, 0, 0.001);
         lower.castShadow = true;
-        g.add(lower);
+        inner.add(lower);
 
         var upper = new THREE.Mesh(new THREE.SphereGeometry(1, 26, 16), shellMat);
         upper.scale.set(0.047, 0.035, 0.016);
         upper.position.set(-0.003, 0, 0.009);
         upper.castShadow = true;
-        g.add(upper);
+        inner.add(upper);
 
         /* 顶部电池盖 */
         var hatch = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), shellDark);
         hatch.scale.set(0.033, 0.024, 0.009);
         hatch.position.set(-0.006, 0, 0.017);
-        g.add(hatch);
+        inner.add(hatch);
 
         /* 机头前脸(深色) + 前视避障窗 */
         var face = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), shellDark);
         face.scale.set(0.016, 0.033, 0.012);
         face.position.set(0.043, 0, 0.004);
-        g.add(face);
+        inner.add(face);
 
         var visor = new THREE.Mesh(new THREE.BoxGeometry(0.0035, 0.020, 0.007), glassMat);
         visor.position.set(0.0505, 0, 0.005);
-        g.add(visor);
+        inner.add(visor);
 
         var L = QC.config.DRONE.armLength;
         var a = L / Math.SQRT2;
@@ -167,15 +168,15 @@
             arm.rotation.z = Math.atan2(py, px);
             arm.rotation.y = -0.05;
             arm.castShadow = true;
-            g.add(arm);
+            inner.add(arm);
 
             /* 电机座 + 桨帽 */
             var nacelle = new THREE.Mesh(nacelleGeo, motorMat);
             nacelle.position.set(px, py, 0.006);
-            g.add(nacelle);
+            inner.add(nacelle);
             var cap = new THREE.Mesh(capGeo, shellDark);
             cap.position.set(px, py, 0.0125);
-            g.add(cap);
+            inner.add(cap);
 
             /* 桨: 两片对置叶片, 单独一个 Group 以便旋转 */
             var prop = new THREE.Group();
@@ -187,7 +188,7 @@
             }
             var hub = new THREE.Mesh(hubGeo, shellDark);
             prop.add(hub);
-            g.add(prop);
+            inner.add(prop);
             props.push({ mesh: prop, dir: m.c > 0 ? 1 : -1 });
         }
 
@@ -207,7 +208,7 @@
         lens.rotation.z = Math.PI / 2;
         lens.position.set(0.014, 0, -0.011);
         gimbal.add(lens);
-        g.add(gimbal);
+        inner.add(gimbal);
 
         /* --- 起落架: 两条支腿 + 两根滑橇 --- */
         var legGeo = new THREE.CylinderGeometry(0.0026, 0.0032, 0.030, 8);
@@ -218,11 +219,11 @@
             [-1, 1].forEach(function (fx) {
                 var leg = new THREE.Mesh(legGeo, shellDark);
                 leg.position.set(fx * 0.016, s * 0.030, -0.017);
-                g.add(leg);
+                inner.add(leg);
             });
             var skid = new THREE.Mesh(skidGeo, shellDark);
             skid.position.set(0, s * 0.0345, -0.0305);
-            g.add(skid);
+            inner.add(skid);
         });
 
         /* --- 4 个 LED: 与固件一致, 位置对应四个机臂 --- */
@@ -236,10 +237,24 @@
             var led = new THREE.Mesh(ledGeo, ledMats[k]);
             /* 装在电机座下沿, 从侧面能看见 */
             led.position.set(ledPos[k][0] * 0.94, ledPos[k][1] * 0.94, -0.0035);
-            g.add(led);
+            inner.add(led);
         });
 
-        g.traverse(function (o) { if (o.isMesh && o.material !== propMat) o.castShadow = true; });
+        inner.traverse(function (o) { if (o.isMesh && o.material !== propMat) o.castShadow = true; });
+
+        /*
+         * 把模型的最低点(起落架滑橇底面)对齐到 group 的原点, 再整体按
+         * visualScale 放大。这样物理上"飞机在 z = 地面高度"时, 画面上
+         * 起落架正好落在地面上, 放大多少倍都不会陷进地里。
+         */
+        g.add(inner);
+        var box = new THREE.Box3().setFromObject(inner);
+        if (isFinite(box.min.z)) inner.position.z = -box.min.z;
+
+        var vs = QC.config.DRONE.visualScale || 1;
+        g.scale.setScalar(vs);
+        /* 机身尺寸变了, 阴影相机要跟着放宽一点 */
+        g.userData.visualScale = vs;
 
         return { group: g, props: props, ledMats: ledMats };
     }

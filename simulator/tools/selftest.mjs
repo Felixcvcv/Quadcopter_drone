@@ -9,10 +9,15 @@
  *   5. 解锁状态机需要完整的"油门高-保持-油门低-保持"序列
  *   6. 断链会触发自动上锁并退出定高
  *   7. 定高环能把飞机稳定在目标高度附近
+ *   8. 源码里引用的配置常量都真实存在(引用不存在的常量只会算出 NaN, 不会报错)
+ *   9. 电机输出始终被限幅在 0~1000
  *
  * 运行: node simulator/tools/selftest.mjs
  */
-import { makeRig, loadModules } from './harness.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { makeRig, loadModules, LOAD_ORDER } from './harness.mjs';
 
 const QC = loadModules();
 
@@ -303,6 +308,87 @@ section('8. 未解锁时电机必须停转');
     check('未解锁时 4 个电机全为 0', allZero,
         `转速 ${m.leftTop.speed}/${m.leftBottom.speed}/${m.rightTop.speed}/${m.rightBottom.speed}`);
     check('未解锁时飞机没有离地', rig.dyn.position.z < 0.1, `z=${rig.dyn.position.z.toFixed(3)}`);
+}
+
+/* ------------------------------------------------------------------ */
+section('9. 源码里引用的配置常量都真实存在');
+
+{
+    /*
+     * 这条检查是拿教训换来的:
+     * 曾经在 config.js 里漏加 MOTOR_MAX, 而 main.js / hud.js 里照常写
+     * `cfg.MOTOR_MAX`, 于是 `0 / undefined = NaN` —— 螺旋桨的旋转角被写成 NaN
+     * 后再也没转回来(桨叶一直不显示), HUD 的电机条也永远停在 0 宽。
+     * 这类"引用了不存在的常量"不报错, 只会算出 NaN, 所以必须静态查出来。
+     */
+    const JS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'js');
+    const cfgNames = new Set(Object.keys(QC.config));
+    const stateNames = new Set(Object.keys(QC.state));
+    const problems = [];
+    let scanned = 0;
+
+    const RE_CFG = new RegExp('\bcfg\.([A-Za-z_][A-Za-z0-9_]*)', 'g');
+    const RE_QCFG = new RegExp('\bQC\.config\.([A-Za-z_][A-Za-z0-9_]*)', 'g');
+    const RE_QSTATE = new RegExp('\bQC\.state\.([A-Za-z_][A-Za-z0-9_]*)', 'g');
+
+    function scan(dir) {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            const f = path.join(dir, e.name);
+            if (e.isDirectory()) { scan(f); continue; }
+            if (!f.endsWith('.js')) continue;
+            scanned++;
+            const src = fs.readFileSync(f, 'utf8');
+            const rel = path.relative(JS_DIR, f);
+            const look = (re, names, what) => {
+                re.lastIndex = 0;
+                let m;
+                while ((m = re.exec(src)) !== null) {
+                    if (!names.has(m[1])) problems.push(rel + ': ' + what + '.' + m[1] + ' 不存在');
+                }
+            };
+            look(RE_CFG, cfgNames, 'config');
+            look(RE_QCFG, cfgNames, 'config');
+            look(RE_QSTATE, stateNames, 'state');
+        }
+    }
+    scan(JS_DIR);
+
+    check('没有引用不存在的配置常量', problems.length === 0,
+        problems.length ? problems.slice(0, 6).join(' | ') : '扫描了 ' + scanned + ' 个模块');
+    check('config.MOTOR_MAX = 1000', QC.config.MOTOR_MAX === 1000,
+        '实际 ' + QC.config.MOTOR_MAX);
+    check('state.MOTOR_MAX 与 config 一致',
+        QC.state.MOTOR_MAX === QC.config.MOTOR_MAX &&
+        QC.state.MOTOR_STOP === QC.config.MOTOR_STOP);
+}
+
+/* ------------------------------------------------------------------ */
+section('10. 电机输出始终被限幅在 0~1000');
+
+{
+    const rig = makeRig({ calibrate: true });
+    const hover = rig.hoverThrottle();
+    rig.arm();
+    rig.sticks.THR = hover + 260;
+    rig.step(3000);
+    rig.remote.joyStick.isFixHeight = 1;
+    rig.step(500);
+    rig.dyn.velocity.z = -6;        /* 猛地下沉, 定高环会把 zPid 打到限幅 */
+    rig.step(2000);
+    rig.sticks.THR = hover - 300;   /* 再猛收油门 */
+
+    let minS = 1e9, maxS = -1e9;
+    const mk = ['leftTop', 'leftBottom', 'rightTop', 'rightBottom'];
+    for (let i = 0; i < 400; i++) {
+        rig.step(5);
+        for (const k of mk) {
+            const v = rig.drone.motors[k].speed;
+            minS = Math.min(minS, v);
+            maxS = Math.max(maxS, v);
+        }
+    }
+    check('所有电机值都在 0~1000 之间', minS >= 0 && maxS <= 1000,
+        '实测范围 ' + minS + ' ~ ' + maxS);
 }
 
 /* ------------------------------------------------------------------ */
