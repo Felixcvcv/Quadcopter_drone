@@ -92,45 +92,49 @@
         </div>
     </div>
 
-    <!-- ============ 虚拟遥控器 ============ -->
-    <div id="remote" class="panel">
-        <h3>遥控器</h3>
-        <div class="sticks">
-            <div class="stick" id="stickLeft">
-                <span class="axis-label lbl-t">油门</span>
-                <span class="axis-label lbl-l">偏航</span>
-                <div class="knob"></div>
-            </div>
-            <div class="stick" id="stickRight">
-                <span class="axis-label lbl-t">俯仰</span>
-                <span class="axis-label lbl-l">横滚</span>
-                <div class="knob"></div>
-            </div>
-        </div>
-        <div class="btns">
-            <span class="vbtn" id="vbtnQ">Q 左上</span>
-            <span class="vbtn" id="vbtnE">E 右上</span>
-        </div>
-    </div>
-
     <!-- ============ 底部: 操作说明与日志 ============ -->
     <div id="bottombar" class="panel">
-        <div class="help">
-            <div><kbd>W</kbd><kbd>S</kbd> 油门</div>
-            <div><kbd>A</kbd><kbd>D</kbd> 偏航</div>
-            <div><kbd>↑</kbd><kbd>↓</kbd> 俯仰</div>
-            <div><kbd>←</kbd><kbd>→</kbd> 横滚</div>
-            <div><kbd>Shift</kbd> 微调速度</div>
-            <div><kbd>空格</kbd> 自动解锁</div>
-            <div><kbd>E</kbd> 短按定高 / 长按校准摇杆</div>
-            <div><kbd>Q</kbd> 关机</div>
-            <div><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd> 零偏微调</div>
-            <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 视角</div>
-            <div><kbd>T</kbd> 时间倍速</div>
-            <div><kbd>J</kbd> 2.4G 干扰</div>
-            <div><kbd>H</kbd> 隐藏面板</div>
-            <div><kbd>R</kbd> 复位</div>
+        <!-- 虚拟遥控器: 鼠标按住摇杆圆圈拖动即可操纵 -->
+        <div id="remote">
+            <div class="loghead">虚拟遥控器 <span class="hintline">按住摇杆拖动</span></div>
+            <div class="sticks">
+                <div class="stick" id="stickLeft" title="油门(上下) / 偏航(左右) —— 油门上推离地, 松手保持">
+                    <span class="axis-label lbl-t">油门</span>
+                    <span class="axis-label lbl-l">偏航</span>
+                    <div class="knob"></div>
+                </div>
+                <div class="stick" id="stickRight" title="俯仰(上下) / 横滚(左右) —— 松手自动回中">
+                    <span class="axis-label lbl-t">俯仰</span>
+                    <span class="axis-label lbl-l">横滚</span>
+                    <div class="knob"></div>
+                </div>
+            </div>
+            <div class="btns">
+                <span class="vbtn" id="vbtnQ">Q 左上 · 关机</span>
+                <span class="vbtn" id="vbtnE">E 右上 · 定高</span>
+            </div>
         </div>
+
+        <div class="help">
+            <div class="loghead">键盘操作 <span class="hintline">左杆=油门/偏航, 右杆=俯仰/横滚</span></div>
+            <div class="helpgrid">
+                <div><kbd>W</kbd><kbd>S</kbd> 油门</div>
+                <div><kbd>A</kbd><kbd>D</kbd> 偏航</div>
+                <div><kbd>↑</kbd><kbd>↓</kbd> 俯仰</div>
+                <div><kbd>←</kbd><kbd>→</kbd> 横滚</div>
+                <div><kbd>Shift</kbd> 微调速度</div>
+                <div><kbd>空格</kbd> 自动解锁</div>
+                <div><kbd>E</kbd> 短按定高 / 长按校准摇杆零偏</div>
+                <div><kbd>Q</kbd> 关机</div>
+                <div><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd> 零偏微调</div>
+                <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 三种第三人称视角</div>
+                <div><kbd>T</kbd> 时间倍速</div>
+                <div><kbd>J</kbd> 2.4G 干扰</div>
+                <div><kbd>H</kbd> 隐藏面板</div>
+                <div><kbd>R</kbd> 复位</div>
+            </div>
+        </div>
+
         <div class="logbox">
             <div class="loghead">运行日志 <span id="logCount"></span></div>
             <div id="log"></div>
@@ -138,7 +142,7 @@
     </div>
 
     <!-- ============ 融合提示 ============ -->
-    <div id="hint">拖动虚拟摇杆, 或直接用键盘。按 <kbd>空格</kbd> 自动完成解锁动作。</div>
+    <div id="hint">用鼠标拖动底部的虚拟摇杆，或直接用键盘。<br>按 <kbd>空格</kbd> 自动完成解锁动作。</div>
     <div id="toast"></div>
 
     <!-- ============ three.js (UMD 构建, 普通 script 即可, 支持 file:// 直接打开) ============ -->

@@ -64,7 +64,7 @@
     /* ---------------- 运行状态 ---------------- */
     var S = {
         simMs: 0,
-        camMode: 0,          /* 0 追尾  1 环绕  2 机载 */
+        camMode: 0,          /* 0 追尾跟随  1 环绕  2 俯视跟随 (全是第三人称) */
         camDist: 6.5,
         orbitYaw: -0.75,
         orbitPitch: 0.36,
@@ -218,8 +218,7 @@
         var fwd = { x: R[0][0], y: R[1][0], z: R[2][0] };   /* 机头方向(世界系) */
 
         if (S.camMode === 0) {
-            /* 追尾: 在机头反方向、略高处, 平滑跟随 */
-            /* 相机在机头反方向略高处, 视线指向机头前方一点,
+            /* 追尾(第三人称): 相机在机头反方向略高处, 视线指向机头前方一点,
                这样地平线大约落在画面上三分之一处 */
             var back = S.camDist * 0.95;
             camWant.set(dyn.position.x - fwd.x * back, dyn.position.y - fwd.y * back,
@@ -232,7 +231,7 @@
                 dyn.position.z + 0.35);
             camera.lookAt(camLook);
         } else if (S.camMode === 1) {
-            /* 环绕: 拖动鼠标转, 滚轮缩放 */
+            /* 环绕(第三人称): 拖动鼠标绕飞机转, 滚轮缩放 */
             var cp = Math.cos(S.orbitPitch), sp = Math.sin(S.orbitPitch);
             camWant.set(
                 dyn.position.x + Math.cos(S.orbitYaw) * cp * S.camDist,
@@ -243,15 +242,16 @@
             camera.position.copy(camPos);
             camera.lookAt(dyn.position.x, dyn.position.y, dyn.position.z + 0.1);
         } else {
-            /* 机载: 坐在机头往前看 */
-            camera.position.set(
-                dyn.position.x + fwd.x * 0.1,
-                dyn.position.y + fwd.y * 0.1,
-                dyn.position.z + fwd.z * 0.1);
-            camLook.set(dyn.position.x + fwd.x * 6,
-                dyn.position.y + fwd.y * 6,
-                dyn.position.z + fwd.z * 6);
-            camera.lookAt(camLook);
+            /* 俯视跟随(第三人称): 相机在飞机上方偏后, 往下看着飞机,
+               适合在城区里盯住飞机位置、观察位置漂移 */
+            camWant.set(
+                dyn.position.x - fwd.x * S.camDist * 0.32,
+                dyn.position.y - fwd.y * S.camDist * 0.32,
+                dyn.position.z + S.camDist * 1.1 + 1.6);
+            if (camPos.lengthSq() === 0) camPos.copy(camWant);
+            camPos.lerp(camWant, Math.min(1, dtS * 3.2));
+            camera.position.copy(camPos);
+            camera.lookAt(dyn.position.x, dyn.position.y, dyn.position.z + 0.2);
         }
         camera.up.set(0, 0, 1);
     }
@@ -308,7 +308,8 @@
         if (c.cam >= 0) {
             S.camMode = c.cam;
             c.cam = -1;
-            hud.toast(['追尾视角', '环绕视角 (拖动旋转 / 滚轮缩放)', '机载视角'][S.camMode]);
+            hud.toast(['第三人称 · 追尾跟随', '第三人称 · 环绕 (拖动旋转 / 滚轮缩放)',
+                '第三人称 · 俯视跟随'][S.camMode]);
         }
         if (c.timeScale) {
             c.timeScale = 0;
@@ -371,6 +372,9 @@
         hud.elements.statFps.textContent = S.fps.toFixed(0) + ' fps' +
             (S.timeScale !== 1 ? ' · ' + S.timeScale + 'x' : '');
 
+        /* 虚拟摇杆的旋钮位置跟通道值同步: 键盘操作时也能看到杆在动 */
+        QC.input.syncStickDom(input, document);
+
         requestAnimationFrame(frame);
     }
 
@@ -405,7 +409,7 @@
     viewport.addEventListener('wheel', function (e) {
         e.preventDefault();
         var lo = (S.camMode === 1) ? 1.5 : 2.5;
-        var hi = (S.camMode === 1) ? 90 : 26;
+        var hi = (S.camMode === 1) ? 90 : (S.camMode === 2 ? 45 : 26);
         S.camDist = QC.math.clamp(S.camDist * (1 + Math.sign(e.deltaY) * 0.12), lo, hi);
     }, { passive: false });
     root.addEventListener('resize', function () {

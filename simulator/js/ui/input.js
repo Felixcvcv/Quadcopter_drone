@@ -206,74 +206,120 @@
         return cur;
     }
 
-    /**
-     * 绑定虚拟遥控器: 两个摇杆区域, 鼠标/触摸拖动
-     * 左摇杆 = 油门(上下) + 偏航(左右)
-     * 右摇杆 = 俯仰(上下) + 横滚(左右)
-     * 这就是遥控器常见的 Mode 2 布局
-     */
-    function bindVirtualSticks(input, doc) {
-        var defs = [
-            { id: 'stickLeft', vert: 'THR', horiz: 'YAW', vertUp: +1, horizRight: +1, defVert: 0 },
-            { id: 'stickRight', vert: 'PIT', horiz: 'ROL', vertUp: +1, horizRight: +1, defVert: 500 }
-        ];
+    /* 虚拟摇杆的定义: Mode 2 布局
+       左杆 = 油门(上下) + 偏航(左右)
+       右杆 = 俯仰(上下) + 横滚(左右) */
+    var STICK_DEFS = [
+        { id: 'stickLeft', vert: 'THR', horiz: 'YAW', selfCenterVert: false },
+        { id: 'stickRight', vert: 'PIT', horiz: 'ROL', selfCenterVert: true }
+    ];
 
-        defs.forEach(function (d) {
+    var stickRefs = null;   /* [{el, knob, def}] */
+
+    function collectSticks(doc) {
+        if (stickRefs) return stickRefs;
+        stickRefs = [];
+        STICK_DEFS.forEach(function (d) {
             var el = doc.getElementById(d.id);
             if (!el) return;
             var knob = el.querySelector('.knob');
+            stickRefs.push({ el: el, knob: knob, def: d });
+        });
+        return stickRefs;
+    }
+
+    /**
+     * 把通道值反映到摇杆旋钮的位置上。
+     * 每帧调用: 于是键盘操作时也能看到杆在动, 鼠标拖动与键盘两条路径不会"各显示一套"。
+     */
+    function syncStickDom(input, doc) {
+        var refs = collectSticks(doc);
+        var a = input.axes;
+        for (var i = 0; i < refs.length; i++) {
+            var r = refs[i];
+            if (!r.knob) continue;
+            /* 水平: 通道值 -> -1..1; 垂直: 油门与俯仰都是"值大在上" */
+            var nx = (a[r.def.horiz] - 500) / 500;
+            var ny = -(a[r.def.vert] - 500) / 500;
+            r.knob.style.left = ((nx + 1) / 2 * 100) + '%';
+            r.knob.style.top = ((ny + 1) / 2 * 100) + '%';
+        }
+    }
+
+    /**
+     * 绑定虚拟遥控器: 在摇杆圆圈内按下并拖动即可操纵对应通道。
+     * 松手后除油门外的通道自动回中(与真摇杆的弹簧一致)。
+     */
+    function bindVirtualSticks(input, doc) {
+        var refs = collectSticks(doc);
+
+        refs.forEach(function (r) {
+            var el = r.el, d = r.def;
             var dragging = false;
 
-            function apply(ev) {
-                var r = el.getBoundingClientRect();
-                var nx = ((ev.clientX - r.left) / r.width) * 2 - 1;
-                var ny = ((ev.clientY - r.top) / r.height) * 2 - 1;
-                nx = clamp(nx, -1, 1);
-                ny = clamp(ny, -1, 1);
+            /* 把屏幕坐标换算成摇杆内的归一化位置(限制在圆内) */
+            function applyFromEvent(ev) {
+                var rect = el.getBoundingClientRect();
+                var nx = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+                var ny = ((ev.clientY - rect.top) / rect.height) * 2 - 1;
+                /* 圆形摇杆: 限制向量长度不超过 1, 而不是分别夹 x/y */
+                var len = Math.sqrt(nx * nx + ny * ny);
+                if (len > 1) { nx /= len; ny /= len; }
 
-                /* 水平 */
-                var h = 500 + nx * 500 * d.horizRight;
-                input.setAxis(d.horiz, h);
-                /* 垂直: 屏幕向下为正, 摇杆向上要让行程量增大 */
-                var v = 500 - ny * 500 * d.vertUp;
-                if (d.vert === 'THR') {
-                    /* 油门: -1(最下) -> 0, +1(最上) -> 1000 */
-                    v = (1 - ny) / 2 * 1000;
-                }
-                input.setAxis(d.vert, v);
-
-                if (knob) {
-                    knob.style.left = ((nx + 1) / 2 * 100) + '%';
-                    knob.style.top = ((ny + 1) / 2 * 100) + '%';
-                }
+                input.setAxis(d.horiz, 500 + nx * 500);
+                /* 屏幕上往下为正, 摇杆推上去要让通道值变大 */
+                input.setAxis(d.vert, 500 - ny * 500);
+                syncStickDom(input, doc);
             }
 
             el.addEventListener('pointerdown', function (ev) {
+                ev.preventDefault();
                 dragging = true;
-                el.setPointerCapture(ev.pointerId);
-                apply(ev);
+                el.classList.add('active');
+                try { el.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+                applyFromEvent(ev);
             });
+
             el.addEventListener('pointermove', function (ev) {
-                if (dragging) apply(ev);
+                if (!dragging) return;
+                ev.preventDefault();
+                applyFromEvent(ev);
             });
-            el.addEventListener('pointerup', function (ev) {
+
+            function endDrag(ev) {
+                if (!dragging) return;
                 dragging = false;
-                try { el.releasePointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
-                /* 松手后除油门外的通道回中 */
-                if (d.horiz) input.setAxis(d.horiz, 500);
-                if (d.vert !== 'THR') input.setAxis(d.vert, 500);
-                if (knob) {
-                    knob.style.left = '50%';
-                    knob.style.top = (d.vert === 'THR') ? knob.style.top : '50%';
+                el.classList.remove('active');
+                if (ev && ev.pointerId !== undefined) {
+                    try { el.releasePointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
                 }
+                /* 松手: 水平方向一律回中; 垂直方向只有俯仰会回中, 油门保持 */
+                input.setAxis(d.horiz, 500);
+                if (d.selfCenterVert) input.setAxis(d.vert, 500);
+                syncStickDom(input, doc);
+            }
+
+            el.addEventListener('pointerup', endDrag);
+            el.addEventListener('pointercancel', endDrag);
+            /* 指针被系统抢走(例如切窗口)时也要收尾 */
+            el.addEventListener('lostpointercapture', function () {
+                if (dragging) endDrag(null);
             });
-            el.addEventListener('pointercancel', function () { dragging = false; });
+
+            /* 双击摇杆区域 = 该杆回中 */
+            el.addEventListener('dblclick', function () {
+                input.setAxis(d.horiz, 500);
+                if (d.selfCenterVert) input.setAxis(d.vert, 500);
+                syncStickDom(input, doc);
+            });
         });
     }
 
     QC.input = {
         makeInput: makeInput,
         bindVirtualSticks: bindVirtualSticks,
+        syncStickDom: syncStickDom,
+        STICK_DEFS: STICK_DEFS,
         BUTTONS: BUTTONS,
         KEYMAP: KEYMAP
     };

@@ -79,29 +79,54 @@
         return t;
     }
 
-    /* ---------------- 机身模型 ---------------- */
+    /* ---------------- 机身模型 ----------------
+       外观参考大疆消费级四轴的设计语言: 白色圆润机身、深色机臂、
+       机头下方的云台相机、两条起落架。全部用基本几何体程序化生成,
+       没有使用任何大疆的模型或贴图资源。
+       机体系: X 前, Y 右, Z 上; 电机位置与 dynamics.js 的 MOTOR_LAYOUT 一致。 */
     function buildDrone() {
         var g = new THREE.Group();
 
-        var armMat = new THREE.MeshStandardMaterial({ color: 0x2f333a, roughness: 0.7 });
-        var motorMat = new THREE.MeshStandardMaterial({ color: 0xb9bec6, roughness: 0.35, metalness: 0.8 });
+        /* 材质: 白色亮面外壳 + 深色机臂 + 金属电机 + 半透明深色桨 */
+        var shellMat = new THREE.MeshStandardMaterial({ color: 0xf0f2f4, roughness: 0.34, metalness: 0.06 });
+        var shellDark = new THREE.MeshStandardMaterial({ color: 0x30343a, roughness: 0.55, metalness: 0.18 });
+        var armMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.6, metalness: 0.2 });
+        var motorMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.3, metalness: 0.85 });
+        var lensMat = new THREE.MeshStandardMaterial({ color: 0x111417, roughness: 0.18, metalness: 0.5 });
+        var glassMat = new THREE.MeshStandardMaterial({ color: 0x223040, roughness: 0.08, metalness: 0.9 });
         var propMat = new THREE.MeshStandardMaterial({
-            color: 0x33b5e5, roughness: 0.45, metalness: 0.1,
-            transparent: true, opacity: 0.6, side: THREE.DoubleSide
-        });
-        var bladeMat = new THREE.MeshBasicMaterial({
-            color: 0xffffff, transparent: true, opacity: 0.45, side: THREE.DoubleSide
+            color: 0x1d2126, roughness: 0.42, metalness: 0.15,
+            transparent: true, opacity: 0.82, side: THREE.DoubleSide
         });
 
-        /* 机身 (X 前, Y 右, Z 上) */
-        g.add(new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.04, 0.014),
-            new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.62, metalness: 0.25 })));
+        /* --- 机身: 上下两片压扁的椭球拼出圆润外壳 --- */
+        var lower = new THREE.Mesh(new THREE.SphereGeometry(1, 26, 16), shellMat);
+        lower.scale.set(0.056, 0.043, 0.0135);
+        lower.position.set(0, 0, 0.001);
+        lower.castShadow = true;
+        g.add(lower);
 
-        /* 机头指示 */
-        var nose = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.018, 0.011),
-            new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 }));
-        nose.position.set(0.031, 0, 0.002);
-        g.add(nose);
+        var upper = new THREE.Mesh(new THREE.SphereGeometry(1, 26, 16), shellMat);
+        upper.scale.set(0.047, 0.035, 0.016);
+        upper.position.set(-0.003, 0, 0.009);
+        upper.castShadow = true;
+        g.add(upper);
+
+        /* 顶部电池盖 */
+        var hatch = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), shellDark);
+        hatch.scale.set(0.033, 0.024, 0.009);
+        hatch.position.set(-0.006, 0, 0.017);
+        g.add(hatch);
+
+        /* 机头前脸(深色) + 前视避障窗 */
+        var face = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), shellDark);
+        face.scale.set(0.016, 0.033, 0.012);
+        face.position.set(0.043, 0, 0.004);
+        g.add(face);
+
+        var visor = new THREE.Mesh(new THREE.BoxGeometry(0.0035, 0.020, 0.007), glassMat);
+        visor.position.set(0.0505, 0, 0.005);
+        g.add(visor);
 
         var L = QC.config.DRONE.armLength;
         var a = L / Math.SQRT2;
@@ -109,57 +134,112 @@
         var keys = QC.dynamics.MOTOR_KEYS;
         var props = [];
 
-        var armGeo = new THREE.BoxGeometry(1, 0.008, 0.005);
-        var motorGeo = new THREE.CylinderGeometry(0.0055, 0.0055, 0.012, 10);
-        motorGeo.rotateX(Math.PI / 2);   /* 圆柱轴转到 Z */
-        var propGeo = new THREE.CircleGeometry(0.033, 20);
-        var bladeGeo = new THREE.PlaneGeometry(0.062, 0.007);
+        /* --- 机臂 --- */
+        var armGeo = new THREE.BoxGeometry(1, 0.0085, 0.0055);
+        var nacelleGeo = new THREE.CylinderGeometry(0.0075, 0.0085, 0.014, 12);
+        nacelleGeo.rotateX(Math.PI / 2);          /* 圆柱轴转到 Z */
+        var capGeo = new THREE.CylinderGeometry(0.003, 0.0042, 0.006, 10);
+        capGeo.rotateX(Math.PI / 2);
+
+        /* --- 桨叶: 用 Shape 挤出带后掠的叶片 --- */
+        function bladeGeometry(len, wid) {
+            var s = new THREE.Shape();
+            s.moveTo(0.001, 0);
+            s.bezierCurveTo(len * 0.22, wid * 0.95, len * 0.72, wid * 0.62, len, wid * 0.14);
+            s.lineTo(len, -wid * 0.14);
+            s.bezierCurveTo(len * 0.72, -wid * 0.62, len * 0.22, -wid * 0.95, 0.001, 0);
+            var geo = new THREE.ExtrudeGeometry(s, { depth: 0.0011, bevelEnabled: false });
+            geo.rotateX(-0.16);                   /* 一点桨距, 看起来更像螺旋桨 */
+            return geo;
+        }
+        var bladeGeo = bladeGeometry(0.030, 0.0095);
+        var hubGeo = new THREE.CylinderGeometry(0.0055, 0.0068, 0.0035, 10);
+        hubGeo.rotateX(Math.PI / 2);
 
         for (var i = 0; i < keys.length; i++) {
             var m = layout[keys[i]];
             var px = m.x * a, py = m.y * a;
 
+            /* 机臂: 从机身斜向外伸, 带一点上反角 */
             var arm = new THREE.Mesh(armGeo, armMat);
             arm.scale.x = L;
-            arm.position.set(px * 0.5, py * 0.5, 0.001);
+            arm.position.set(px * 0.5, py * 0.5, 0.002);
             arm.rotation.z = Math.atan2(py, px);
+            arm.rotation.y = -0.05;
+            arm.castShadow = true;
             g.add(arm);
 
-            var motor = new THREE.Mesh(motorGeo, motorMat);
-            motor.position.set(px, py, 0.008);
-            g.add(motor);
+            /* 电机座 + 桨帽 */
+            var nacelle = new THREE.Mesh(nacelleGeo, motorMat);
+            nacelle.position.set(px, py, 0.006);
+            g.add(nacelle);
+            var cap = new THREE.Mesh(capGeo, shellDark);
+            cap.position.set(px, py, 0.0125);
+            g.add(cap);
 
-            var prop = new THREE.Mesh(propGeo, propMat);
-            prop.position.set(px, py, 0.0145);
-            var blade = new THREE.Mesh(bladeGeo, bladeMat);
-            blade.position.z = 0.001;
-            prop.add(blade);
+            /* 桨: 两片对置叶片, 单独一个 Group 以便旋转 */
+            var prop = new THREE.Group();
+            prop.position.set(px, py, 0.0165);
+            for (var b = 0; b < 2; b++) {
+                var bl = new THREE.Mesh(bladeGeo, propMat);
+                bl.rotation.z = b * Math.PI;
+                prop.add(bl);
+            }
+            var hub = new THREE.Mesh(hubGeo, shellDark);
+            prop.add(hub);
             g.add(prop);
-
             props.push({ mesh: prop, dir: m.c > 0 ? 1 : -1 });
         }
 
-        /* 4 个 LED (固件里低电平点亮) */
+        /* --- 云台相机(机头下方) --- */
+        var gimbal = new THREE.Group();
+        gimbal.position.set(0.030, 0, -0.014);
+        var post = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.010, 8), shellDark);
+        post.rotation.z = Math.PI / 2;
+        gimbal.add(post);
+        var bracket = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.019, 0.0022), shellDark);
+        bracket.position.set(0.0045, 0, -0.005);
+        gimbal.add(bracket);
+        var cam = new THREE.Mesh(new THREE.BoxGeometry(0.013, 0.0145, 0.012), lensMat);
+        cam.position.set(0.006, 0, -0.011);
+        gimbal.add(cam);
+        var lens = new THREE.Mesh(new THREE.CylinderGeometry(0.0042, 0.0046, 0.005, 14), glassMat);
+        lens.rotation.z = Math.PI / 2;
+        lens.position.set(0.014, 0, -0.011);
+        gimbal.add(lens);
+        g.add(gimbal);
+
+        /* --- 起落架: 两条支腿 + 两根滑橇 --- */
+        var legGeo = new THREE.CylinderGeometry(0.0026, 0.0032, 0.030, 8);
+        legGeo.rotateZ(0.22);
+        var skidGeo = new THREE.CylinderGeometry(0.0030, 0.0030, 0.070, 8);
+        skidGeo.rotateZ(Math.PI / 2);
+        [-1, 1].forEach(function (s) {
+            [-1, 1].forEach(function (fx) {
+                var leg = new THREE.Mesh(legGeo, shellDark);
+                leg.position.set(fx * 0.016, s * 0.030, -0.017);
+                g.add(leg);
+            });
+            var skid = new THREE.Mesh(skidGeo, shellDark);
+            skid.position.set(0, s * 0.0345, -0.0305);
+            g.add(skid);
+        });
+
+        /* --- 4 个 LED: 与固件一致, 位置对应四个机臂 --- */
         var ledMats = {};
         var ledPos = {
             leftTop: [+a, +a], leftBottom: [-a, +a], rightTop: [+a, -a], rightBottom: [-a, -a]
         };
-        var ledGeo = new THREE.SphereGeometry(0.0065, 8, 6);
+        var ledGeo = new THREE.SphereGeometry(0.0058, 10, 8);
         Object.keys(ledPos).forEach(function (k) {
             ledMats[k] = new THREE.MeshBasicMaterial({ color: 0x241010 });
             var led = new THREE.Mesh(ledGeo, ledMats[k]);
-            led.position.set(ledPos[k][0] * 0.6, ledPos[k][1] * 0.6, -0.009);
+            /* 装在电机座下沿, 从侧面能看见 */
+            led.position.set(ledPos[k][0] * 0.94, ledPos[k][1] * 0.94, -0.0035);
             g.add(led);
         });
 
-        /* 起落架(沿机身方向的两条) */
-        var skidGeo = new THREE.BoxGeometry(0.078, 0.012, 0.004);
-        var skidMat = new THREE.MeshStandardMaterial({ color: 0x1b1d21, roughness: 0.85 });
-        [-1, 1].forEach(function (s) {
-            var skid = new THREE.Mesh(skidGeo, skidMat);
-            skid.position.set(0, s * 0.03, -0.0125);
-            g.add(skid);
-        });
+        g.traverse(function (o) { if (o.isMesh && o.material !== propMat) o.castShadow = true; });
 
         return { group: g, props: props, ledMats: ledMats };
     }
