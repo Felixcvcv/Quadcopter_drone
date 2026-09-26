@@ -26,7 +26,8 @@ export const LOAD_ORDER = [
     'fw/comm.js',
     'fw/tasks.js',
     'sim/dynamics.js',
-    'sim/sensors.js'
+    'sim/sensors.js',
+    'ui/input.js'
 ];
 
 let loaded = false;
@@ -97,7 +98,20 @@ export function makeRig(opts = {}) {
     /* 摇杆的直接输入(0~1000, 已经是"固件里的通道值"): 测试用, 绕开键盘 */
     const sticks = { THR: 0, YAW: 500, PIT: 500, ROL: 500 };
 
+    /*
+     * useInput=true 时改走真实的输入链路:
+     *   input.axes -> config.STICK_POLARITY 极性映射 -> remote.joyStick -> 空口 -> 飞控
+     * 用来回归"推杆方向是否等于飞行方向"这类问题。
+     */
+    const useInput = !!opts.useInput;
+    const input = useInput ? QC.input.makeInput() : null;
+
     function applySticks() {
+        if (useInput) {
+            input.update(0.5);
+            input.applyToRemote(remote, 0.5);
+            return;
+        }
         remote.joyStick.THR = sticks.THR;
         remote.joyStick.YAW = sticks.YAW;
         remote.joyStick.PIT = sticks.PIT;
@@ -146,7 +160,7 @@ export function makeRig(opts = {}) {
     }
 
     return {
-        QC, cfg, drone, remote, dyn, sensors, sc, sticks, remotePos,
+        QC, cfg, drone, remote, dyn, sensors, sc, sticks, remotePos, input,
         step, arm, hoverThrottle,
         get simMs() { return simMs; },
         get unlocked() { return drone.isRemoteUnlocked === QC.comm.Com_OK; },

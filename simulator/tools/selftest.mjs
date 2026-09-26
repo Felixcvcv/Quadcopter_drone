@@ -11,6 +11,7 @@
  *   7. 定高环能把飞机稳定在目标高度附近
  *   8. 源码里引用的配置常量都真实存在(引用不存在的常量只会算出 NaN, 不会报错)
  *   9. 电机输出始终被限幅在 0~1000
+ *  10. 推杆方向 = 屏幕上的飞行方向(走真实输入链路: 摇杆 -> 极性 -> 空口 -> 飞控)
  *
  * 运行: node simulator/tools/selftest.mjs
  */
@@ -389,6 +390,87 @@ section('10. 电机输出始终被限幅在 0~1000');
     }
     check('所有电机值都在 0~1000 之间', minS >= 0 && maxS <= 1000,
         '实测范围 ' + minS + ' ~ ' + maxS);
+}
+
+/* ------------------------------------------------------------------ */
+section('11. 推杆方向 = 屏幕上的飞行方向');
+
+{
+    /*
+     * 这条是用户实测反馈换来的: 曾经按左键飞机在屏幕上往右飞。
+     * 根因不在映射, 而在坐标手性 —— 轴向标成 (X=北, Y=东, Z=上) 在 Z 朝上时
+     * 是左手系, 而 three.js 与物理用标准右手代数, 画面因此左右镜像;
+     * 俯仰正好落在镜像对称轴上所以正常, 横滚与偏航都反了。
+     *
+     * 结论: 相机在机尾后方时, 屏幕右方向对应世界 -Y。所以断言写成:
+     *   推杆向右 -> 位移的世界 Y 分量 < 0(即屏幕向右飞)
+     *   推杆向前 -> 位移的世界 X 分量 > 0(即朝屏幕里飞)
+     *   偏航向右 -> 偏航角估计减小(机头转向世界 -Y = 屏幕右)
+     *
+     * 这里走的是完整输入链路: input.axes -> config.STICK_POLARITY -> 18字节帧
+     * -> 飞控解析 -> 姿态环 -> 物理, 所以极性配错一定会被抓到。
+     */
+    function flyWith(axes, ms) {
+        const rig = makeRig({ calibrate: true, useInput: true });
+        /*
+         * 注意: useInput 时通道值是 input.axes 经极性映射来的, rig.sticks 不起作用,
+         * 所以解锁序列也必须走输入链路(油门极性为 +1, 与方向无关)。
+         */
+        const I = rig.input;
+        I.pinAxis('THR', 1000); rig.step(1300);
+        I.pinAxis('THR', 0); rig.step(1300);
+        const armed = rig.drone.isRemoteUnlocked === 0;
+
+        /* 摆到原点、水平、朝 +X, 然后改用输入链路推杆 */
+        rig.dyn.position.x = 0; rig.dyn.position.y = 0; rig.dyn.position.z = 30;
+        rig.dyn.velocity.x = rig.dyn.velocity.y = rig.dyn.velocity.z = 0;
+        rig.dyn.quat = rig.QC.math.qFromEuler(0, 0, 0);
+        rig.dyn.omega.x = rig.dyn.omega.y = rig.dyn.omega.z = 0;
+        rig.step(400);
+
+        const p0 = { x: rig.dyn.position.x, y: rig.dyn.position.y, z: rig.dyn.position.z };
+        const yaw0 = rig.drone.eulerAngle.yaw;
+        Object.keys(axes).forEach(k => rig.input.pinAxis(k, axes[k]));
+        rig.step(ms);
+        const yaw1 = rig.drone.eulerAngle.yaw;
+        const chan = { PIT: rig.remote.joyStick.PIT, ROL: rig.remote.joyStick.ROL,
+                       YAW: rig.remote.joyStick.YAW };
+        return {
+            armed, chan,
+            dx: rig.dyn.position.x - p0.x,
+            dy: rig.dyn.position.y - p0.y,
+            dYaw: yaw1 - yaw0,
+            crashed: rig.dyn.crashed
+        };
+    }
+
+    const right = flyWith({ THR: 600, ROL: 1000 }, 2500);
+    check('摇杆向右 -> 屏幕向右飞(世界 Y 为负)', right.armed && right.dy < -3,
+        `解锁=${right.armed}, 通道 ROL=${right.chan.ROL}, 位移 Y=${right.dy.toFixed(2)}m`);
+
+    const left = flyWith({ THR: 600, ROL: 0 }, 2500);
+    check('摇杆向左 -> 屏幕向左飞(世界 Y 为正)', left.armed && left.dy > 3,
+        `解锁=${left.armed}, 通道 ROL=${left.chan.ROL}, 位移 Y=${left.dy.toFixed(2)}m`);
+
+    const fwd = flyWith({ THR: 600, PIT: 1000 }, 2500);
+    check('摇杆向前 -> 朝屏幕里飞(世界 X 为正)', fwd.armed && fwd.dx > 3,
+        `解锁=${fwd.armed}, 通道 PIT=${fwd.chan.PIT}, 位移 X=${fwd.dx.toFixed(2)}m`);
+
+    const back = flyWith({ THR: 600, PIT: 0 }, 2500);
+    check('摇杆向后 -> 朝相机方向退(世界 X 为负)', back.armed && back.dx < -3,
+        `解锁=${back.armed}, 通道 PIT=${back.chan.PIT}, 位移 X=${back.dx.toFixed(2)}m`);
+
+    const yawR = flyWith({ THR: 600, YAW: 1000 }, 1800);
+    check('偏航向右 -> 机头转向屏幕右', yawR.armed && yawR.dYaw < -8,
+        `解锁=${yawR.armed}, 通道 YAW=${yawR.chan.YAW}, 偏航变化 ${yawR.dYaw.toFixed(1)}°`);
+
+    const yawL = flyWith({ THR: 600, YAW: 0 }, 1800);
+    check('偏航向左 -> 机头转向屏幕左', yawL.armed && yawL.dYaw > 8,
+        `解锁=${yawL.armed}, 通道 YAW=${yawL.chan.YAW}, 偏航变化 ${yawL.dYaw.toFixed(1)}°`);
+
+    /* 顺带确认三个姿态轴都没有发散、没有撞地 */
+    check('方向测试期间没有坠机/发散',
+        ![right, left, fwd, back, yawR, yawL].some(r => r.crashed));
 }
 
 /* ------------------------------------------------------------------ */

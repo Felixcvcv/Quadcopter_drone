@@ -55,7 +55,7 @@
     var boxes = [];
     var buildingTints = [];
 
-    /* 城区: 东北方向, 带路网的方块阵列 */
+    /* 城区: 在 +X / +Y 那一侧, 带路网的方块阵列 (X 为初始机头方向, Y 为初始左侧) */
     var CITY = { x0: 46, x1: 244, y0: -148, y1: 62, cell: 33, road: 9 };
     for (var bx = CITY.x0; bx < CITY.x1; bx += CITY.cell) {
         for (var by = CITY.y0; by < CITY.y1; by += CITY.cell) {
@@ -95,7 +95,7 @@
     }
 
     /* ---------------- 大桥 ---------------- */
-    /* 河道在 y ≈ -236, 桥沿南北方向跨过去 */
+    /* 河道在 y ≈ -236, 桥沿 X 方向跨过去 */
     var BRIDGE = {
         x: 0,
         deckZ: 13.5,       /* 桥面高度 */

@@ -122,6 +122,8 @@
                 input.axes[name] = clamp(Math.round(v), 0, 1000);
             },
             unpinAll: function () { pinned = {}; },
+            /* 只读探针: 当前被锁定的通道名(调试与自动化测试用) */
+            pinnedChannels: function () { return Object.keys(pinned); },
 
             /* 把摇杆行程量写进遥控器状态(含极性映射) */
             applyToRemote: function (remote, dtMs) {
@@ -321,6 +323,16 @@
                 dragging = true;
                 el.classList.add('active');
                 try { el.setPointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
+
+                /*
+                 * 拖动期间必须把这两路通道"锁定"。
+                 * 否则鼠标停住不动时不会有 pointermove, 而 update() 每帧都在把
+                 * 非油门通道往中位拉 —— 表现就是"摇杆一停就往回弹", 鼠标根本
+                 * 按不住杆。锁定后 update() 不再改这两路, 键盘也同步让位。
+                 */
+                input.pinAxis(d.horiz, input.axes[d.horiz]);
+                input.pinAxis(d.vert, input.axes[d.vert]);
+
                 applyFromEvent(ev);
             });
 
@@ -337,9 +349,14 @@
                 if (ev && ev.pointerId !== undefined) {
                     try { el.releasePointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
                 }
-                /* 松手: 水平方向一律回中; 垂直方向只有俯仰会回中, 油门保持 */
+                /* 松手: 水平方向一律回中; 垂直方向只有俯仰回中, 油门保持当前值 */
                 input.setAxis(d.horiz, 500);
                 if (d.selfCenterVert) input.setAxis(d.vert, 500);
+
+                /* 解除锁定, 交回给键盘与回中逻辑 */
+                input.pinAxis(d.horiz, null);
+                input.pinAxis(d.vert, null);
+
                 syncStickDom(input, doc);
             }
 
@@ -354,6 +371,8 @@
             el.addEventListener('dblclick', function () {
                 input.setAxis(d.horiz, 500);
                 if (d.selfCenterVert) input.setAxis(d.vert, 500);
+                input.pinAxis(d.horiz, null);
+                input.pinAxis(d.vert, null);
                 syncStickDom(input, doc);
             });
         });
